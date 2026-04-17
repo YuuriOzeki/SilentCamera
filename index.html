@@ -276,7 +276,7 @@
         <div class="save-actions">
             <button id="save-current-btn" class="action-btn">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
-                この写真
+                この写真を保存
             </button>
             <button id="save-all-btn" class="action-btn primary">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
@@ -303,13 +303,15 @@
         let capturedImages = []; // メモリ上にのみ保存される写真群
         let currentGalleryIndex = 0;
 
-        // 1. カメラの起動
         async function startCamera() {
             try {
+                // ブラウザで出せる「最高画質」を要求する
+                // iPhoneの最大ビデオ解像度（4Kレベル）を引き出すための記述
                 const stream = await navigator.mediaDevices.getUserMedia({
                     video: {
                         facingMode: 'environment', // 背面カメラを強制
-                        aspectRatio: { ideal: 4/3 }
+                        width: { ideal: 4032 }, // iPhoneのネイティブ写真(1200万画素)に近い横幅
+                        height: { ideal: 3024 } // 4:3比率に合わせた縦幅
                     },
                     audio: false // 無音カメラなので音声は不要
                 });
