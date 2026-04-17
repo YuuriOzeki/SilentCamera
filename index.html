@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Silent Camera Web</title>
+    <style>
+        :root {
+            --bg-color: #000;
+            --accent-color: #fff;
+        }
+        * {
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        body {
+            margin: 0;
+            padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+            background-color: var(--bg-color);
+            color: var(--accent-color);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-start;
+            height: 100vh;
+            /* iOS Safariのバー対策 */
+            height: 100dvh;
+        }
+        /* Top Layout */
+        .top-padding {
+            height: 50px;
+            width: 100%;
+        }
+        
+        /* Camera Viewport (4:3) */
+        .camera-container {
+            width: 100%;
+            max-width: 600px;
+            margin: 0 auto;
+            position: relative;
+            background-color: #111;
+            /* 4:3 aspect ratio */
+            aspect-ratio: 3 / 4;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+        }
+        
+        video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        
+        #freeze-frame {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: none;
+            z-index: 10;
+        }
+
+        /* Controls Area */
+        .controls {
+            flex-grow: 1;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 40px;
+            padding-bottom: 30px;
+        }
+        
+        /* Thumbnail */
+        .thumbnail-btn {
+            width: 50px;
+            height: 50px;
+            border-radius: 10px;
+            background-color: #222;
+            border: 1px solid rgba(255,255,255,0.3);
+            overflow: hidden;
+            cursor: pointer;
+            transition: transform 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+        }
+        .thumbnail-btn:active {
+            transform: scale(0.9);
+        }
+        .thumbnail-btn img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: none;
+        }
+
+        /* Shutter */
+        .shutter-btn {
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            background-color: transparent;
+            border: 3px solid var(--accent-color);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+            padding: 0;
+        }
+        .shutter-inner {
+            width: 65px;
+            height: 65px;
+            border-radius: 50%;
+            background-color: var(--accent-color);
+            transition: transform 0.1s;
+        }
+        .shutter-btn:active .shutter-inner {
+            transform: scale(0.85);
+        }
+        
+        /* Spacer */
+        .spacer {
+            width: 50px;
+            height: 50px;
+        }
+
+        /* Gallery Overlay */
+        .gallery-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: var(--bg-color);
+            z-index: 100;
+            display: none;
+            flex-direction: column;
+            padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+        }
+        .gallery-nav {
+            height: 60px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 20px;
+            border-bottom: 1px solid #333;
+        }
+        .gallery-close, .gallery-delete {
+            background: none;
+            border: none;
+            color: #0a84ff;
+            font-size: 16px;
+            font-weight: 500;
+            cursor: pointer;
+            padding: 10px;
+        }
+        .gallery-delete {
+            color: #ff453a;
+        }
+        .gallery-content {
+            flex-grow: 1;
+            display: flex;
+            align-items: center;
+            overflow-x: auto;
+            scroll-snap-type: x mandatory;
+            scroll-behavior: auto; /* iOSでのスクロールバグ対策 */
+        }
+        /* スクロールバー非表示 */
+        .gallery-content::-webkit-scrollbar {
+            display: none;
+        }
+        
+        .gallery-item {
+            flex: 0 0 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            scroll-snap-align: center;
+            padding: 20px;
+        }
+        .gallery-item img {
+            max-width: 100%;
+            max-height: 80vh;
+            border-radius: 12px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            
+            /* Web版の最重要機能：画像の長押し保存を許可する */
+            pointer-events: auto;
+            -webkit-user-select: none;
+            user-select: none;
+            -webkit-touch-callout: default;
+        }
+        
+        .hint-text {
+            color: #aaa;
+            font-size: 14px;
+            margin-top: 15px;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <!-- 上部の余白（純正カメラのレイアウトに寄せるため） -->
+    <div class="top-padding"></div>
+    
+    <!-- カメラ映像＆フリーズ画像 -->
+    <div class="camera-container">
+        <video id="camera-stream" autoplay playsinline muted></video>
+        <img id="freeze-frame" alt="Captured Frame">
+        <!-- 撮影データを切り取るための非表示キャンバス -->
+        <canvas id="capture-canvas" style="display: none;"></canvas>
+    </div>
+    
+    <!-- 下部の操作パネル -->
+    <div class="controls">
+        <div class="thumbnail-btn" id="open-gallery">
+            <img id="thumbnail-img" alt="Thumbnail">
+        </div>
+        
+        <button class="shutter-btn" id="shutter-btn">
+            <div class="shutter-inner"></div>
+        </button>
+        
+        <div class="spacer"></div>
+    </div>
+    
+    <!-- ギャラリー画面（写真確認用オーバーレイ） -->
+    <div class="gallery-overlay" id="gallery-layer">
+        <div class="gallery-nav">
+            <button class="gallery-close" id="close-gallery">閉じる</button>
+            <div id="gallery-counter">0 / 0</div>
+            <button class="gallery-delete" id="delete-photo">削除</button>
+        </div>
+        <div class="gallery-content" id="gallery-scroll">
+            <!-- JavaScriptで画像が動的に追加されます -->
+        </div>
+    </div>
+
+    <script>
+        const video = document.getElementById('camera-stream');
+        const canvas = document.getElementById('capture-canvas');
+        const ctx = canvas.getContext('2d');
+        const freezeFrame = document.getElementById('freeze-frame');
+        const shutterBtn = document.getElementById('shutter-btn');
+        const thumbnailBtn = document.getElementById('open-gallery');
+        const thumbnailImg = document.getElementById('thumbnail-img');
+        
+        const galleryLayer = document.getElementById('gallery-layer');
+        const closeGalleryBtn = document.getElementById('close-gallery');
+        const deletePhotoBtn = document.getElementById('delete-photo');
+        const galleryScroll = document.getElementById('gallery-scroll');
+        const galleryCounter = document.getElementById('gallery-counter');
+        
+        let capturedImages = []; // メモリ上にのみ保存される写真群
+        let currentGalleryIndex = 0;
+
+        // 1. カメラの起動
+        async function startCamera() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: {
+                        facingMode: 'environment', // 背面カメラを強制
+                        aspectRatio: { ideal: 4/3 }
+                    },
+                    audio: false // 無音カメラなので音声は不要
+                });
+                video.srcObject = stream;
+            } catch (err) {
+                console.error("Camera access denied or error:", err);
+                alert("カメラへのアクセスを許可してください。\n設定 > Safari > カメラ > 許可");
+            }
+        }
+        
+        // 2. 写真の撮影（無音）
+        function takePhoto() {
+            if (!video.videoWidth) return;
+            
+            // Canvasのサイズをビデオの解像度に合わせる
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            
+            // ビデオの現在の1フレームをCanvasに描画（これが写真になる）
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            
+            // 最高画質のJPEGとしてデータ化
+            const dataUrl = canvas.toDataURL('image/jpeg', 1.0);
+            
+            // 配列に保存
+            capturedImages.push(dataUrl);
+            
+            // サムネイルを更新
+            thumbnailImg.src = dataUrl;
+            thumbnailImg.style.display = 'block';
+            
+            // サムネイルの可愛いバウンドアニメーション
+            thumbnailBtn.style.transform = 'scale(1.1)';
+            setTimeout(() => { thumbnailBtn.style.transform = 'scale(1)'; }, 200);
+            
+            // 撮影瞬間のフリーズ表示（0.5秒）
+            freezeFrame.src = dataUrl;
+            freezeFrame.style.display = 'block';
+            setTimeout(() => {
+                freezeFrame.style.display = 'none';
+            }, 500);
+            
+            // 触覚フィードバック（iPhone Safariなどで対応している場合）
+            if (window.navigator && window.navigator.vibrate) {
+                window.navigator.vibrate(20);
+            }
+        }
+        
+        // 3. ギャラリーの描画
+        function renderGallery() {
+            galleryScroll.innerHTML = '';
+            
+            if (capturedImages.length === 0) {
+                galleryScroll.innerHTML = '<div style="color:gray;">写真がありません</div>';
+                galleryCounter.innerText = `0 / 0`;
+                deletePhotoBtn.style.display = 'none';
+                return;
+            }
+            
+            deletePhotoBtn.style.display = 'block';
+            
+            // 古い順に表示
+            capturedImages.forEach((src, idx) => {
+                const item = document.createElement('div');
+                item.className = 'gallery-item';
+                
+                const img = document.createElement('img');
+                img.src = src;
+                
+                // 長押し保存のヒント
+                const hint = document.createElement('div');
+                hint.className = 'hint-text';
+                hint.innerText = '長押しして「写真に保存」';
+                
+                item.appendChild(img);
+                item.appendChild(hint);
+                galleryScroll.appendChild(item);
+            });
+            
+            updateGalleryCounter();
+            scrollToIndex(currentGalleryIndex);
+        }
+        
+        // 指定したインデックスの写真にスクロールする
+        function scrollToIndex(index) {
+            const items = document.querySelectorAll('.gallery-item');
+            if (items[index]) {
+                // スムーズスクロールだと見た目が崩れる場合があるため auto を推奨
+                items[index].scrollIntoView({ behavior: 'auto', block: 'nearest', inline: 'start' });
+            }
+        }
+        
+        function updateGalleryCounter() {
+            if (capturedImages.length === 0) {
+                galleryCounter.innerText = `0 / 0`;
+            } else {
+                galleryCounter.innerText = `${currentGalleryIndex + 1} / ${capturedImages.length}`;
+            }
+        }
+        
+        // スクロール位置から現在のインデックスを割り出す
+        let scrollTimeout;
+        galleryScroll.addEventListener('scroll', () => {
+            clearTimeout(scrollTimeout);
+            scrollTimeout = setTimeout(() => {
+                const width = galleryScroll.clientWidth;
+                if (width > 0) {
+                    currentGalleryIndex = Math.round(galleryScroll.scrollLeft / width);
+                    updateGalleryCounter();
+                }
+            }, 50);
+        });
+        
+        // イベントリスナーの登録
+        shutterBtn.addEventListener('click', takePhoto);
+        
+        thumbnailBtn.addEventListener('click', () => {
+            if (capturedImages.length > 0) {
+                currentGalleryIndex = capturedImages.length - 1; // 開いた時は最新の写真
+                renderGallery();
+                galleryLayer.style.display = 'flex';
+                // 表示された後に正しい位置にスクロール
+                setTimeout(() => scrollToIndex(currentGalleryIndex), 10);
+            }
+        });
+        
+        closeGalleryBtn.addEventListener('click', () => {
+            galleryLayer.style.display = 'none';
+        });
+        
+        deletePhotoBtn.addEventListener('click', () => {
+            if (capturedImages.length === 0) return;
+            
+            capturedImages.splice(currentGalleryIndex, 1);
+            
+            if (currentGalleryIndex >= capturedImages.length) {
+                currentGalleryIndex = Math.max(0, capturedImages.length - 1);
+            }
+            
+            if (capturedImages.length > 0) {
+                thumbnailImg.src = capturedImages[capturedImages.length - 1];
+                renderGallery();
+            } else {
+                thumbnailImg.style.display = 'none';
+                thumbnailImg.src = '';
+                galleryLayer.style.display = 'none';
+            }
+        });
+
+        // 起動時にカメラをリクエスト
+        startCamera();
+    </script>
+</body>
+</html>
