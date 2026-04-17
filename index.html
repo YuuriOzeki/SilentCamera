@@ -202,6 +202,40 @@
             margin-top: 15px;
             text-align: center;
         }
+        
+        /* Save Actions Bottom Bar */
+        .save-actions {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            padding: 15px 20px;
+            padding-bottom: max(15px, env(safe-area-inset-bottom));
+            background: #111;
+            border-top: 1px solid #333;
+        }
+        .action-btn {
+            background: #333;
+            color: #fff;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 8px;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            flex: 1;
+            max-width: 200px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 8px;
+            transition: background 0.1s;
+        }
+        .action-btn:active {
+            filter: brightness(0.8);
+        }
+        .action-btn.primary {
+            background: #0a84ff;
+        }
     </style>
 </head>
 <body>
@@ -238,6 +272,16 @@
         </div>
         <div class="gallery-content" id="gallery-scroll">
             <!-- JavaScriptで画像が動的に追加されます -->
+        </div>
+        <div class="save-actions">
+            <button id="save-current-btn" class="action-btn">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+                この写真
+            </button>
+            <button id="save-all-btn" class="action-btn primary">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+                すべて保存
+            </button>
         </div>
     </div>
 
@@ -338,7 +382,7 @@
                 // 長押し保存のヒント
                 const hint = document.createElement('div');
                 hint.className = 'hint-text';
-                hint.innerText = '長押しして「写真に保存」';
+                hint.innerText = '⚠️長押しでも「写真に保存」できます';
                 
                 item.appendChild(img);
                 item.appendChild(hint);
@@ -348,6 +392,50 @@
             updateGalleryCounter();
             scrollToIndex(currentGalleryIndex);
         }
+        
+        // 共有（保存）処理の補助関数
+        async function dataUrlToFile(dataUrl, filename) {
+            const res = await fetch(dataUrl);
+            const blob = await res.blob();
+            // JPEGとして扱う
+            return new File([blob], filename, { type: 'image/jpeg' });
+        }
+
+        async function shareFiles(files) {
+            if (navigator.canShare && navigator.canShare({ files: files })) {
+                try {
+                    await navigator.share({
+                        files: files,
+                        title: '写真を保存',
+                    });
+                } catch (err) {
+                    console.log('Share canceled or failed', err);
+                }
+            } else {
+                alert("お使いのブラウザは共有ボタンに対応していません。画像を長押しして保存してください。");
+            }
+        }
+        
+        // 保存ボタン個別の処理
+        const saveCurrentBtn = document.getElementById('save-current-btn');
+        const saveAllBtn = document.getElementById('save-all-btn');
+
+        saveCurrentBtn.addEventListener('click', async () => {
+            if (capturedImages.length === 0) return;
+            const dataUrl = capturedImages[currentGalleryIndex];
+            // 今の時刻を使ってファイル名を生成
+            const file = await dataUrlToFile(dataUrl, `photo_${Date.now()}.jpg`);
+            await shareFiles([file]);
+        });
+
+        saveAllBtn.addEventListener('click', async () => {
+             if (capturedImages.length === 0) return;
+             // すべての画像をFileオブジェクトに変換
+             const files = await Promise.all(capturedImages.map((dataUrl, idx) => 
+                 dataUrlToFile(dataUrl, `photo_${Date.now()}_${idx}.jpg`)
+             ));
+             await shareFiles(files);
+        });
         
         // 指定したインデックスの写真にスクロールする
         function scrollToIndex(index) {
